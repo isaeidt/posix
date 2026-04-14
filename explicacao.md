@@ -40,3 +40,36 @@ No documento, o roteiro de avaliação pede que você saiba explicar pontos espe
 > *"Criar um processo exige muito do SO (overhead). Ele precisa alocar um PID, copiar tabelas de memória e colocar o processo no escalonador. Se fôssemos multiplicar duas matrizes $1000 \times 1000$, estaríamos pedindo ao SO para criar 1 milhão de processos. O computador ia travar gastando mais tempo gerenciando processos do que fazendo a matemática."*
 
 *Dica extra:* Se você conseguir explicar a diferença entre o espaço de memória que o `fork()` copia e o espaço que o `mmap` compartilha, o professor vai ficar muito satisfeito.
+
+
+
+
+
+
+### Respostas Teóricas: Exercício 7 (Memória Compartilhada)
+
+**Por que a matriz C deve estar em memória compartilhada?**
+> Porque o Linux impõe um isolamento estrito de memória entre os processos criados. Quando você usa a chamada `fork()`, o processo filho ganha uma cópia exata das variáveis do pai, mas completamente independente. Se a matriz C fosse uma variável normal, cada filho escreveria o resultado na sua própria cópia na memória e morreria logo em seguida. O processo pai nunca veria o resultado. A memória compartilhada (via `mmap`) funciona como um quadro público no sistema, garantindo que o pai enxergue o que os filhos escreveram.
+
+**Por que a divisão de trabalho adotada evita conflito direto de escrita entre os processos filhos?**
+> O programa designa um processo filho exclusivo para calcular um elemento exato da matriz (por exemplo, um filho focado apenas no índice `[0][0]` e outro focado no `[0][1]`). Como a regra do laço de repetição garante que essas coordenadas não se cruzam, os filhos nunca tentarão acessar ou escrever no mesmo endereço físico de memória simultaneamente.
+
+**Por que não há necessidade de mutex para proteger a escrita de cada elemento de C?**
+> Um *Mutex* serve para prevenir "Condições de Corrida" (*Race Conditions*), que acontecem quando múltiplos processos tentam alterar o mesmo dado ao mesmo tempo, corrompendo a informação. Como a nossa divisão de trabalho (resposta anterior) já garantiu o isolamento lógico das posições da matriz, é matematicamente impossível haver sobreposição de escrita no mesmo endereço de memória. Sem concorrência sobre a mesma variável, o uso do *Mutex* é desnecessário.
+
+**Qual é o custo da estratégia de criar um processo para cada elemento da matriz?**
+> O custo operacional (*overhead*) para o sistema operacional é altíssimo. A criação de um processo via `fork()` exige que o kernel do Ubuntu aloque um novo PID, crie blocos de controle (PCB), duplique as tabelas de páginas de memória e o coloque na fila do escalonador da CPU. Todo esse gerenciamento de sistema consome ordens de grandeza mais tempo e processamento do que a multiplicação matemática simples que o filho está fazendo.
+
+**Por que essa abordagem é didaticamente interessante, mas pouco escalável para matrizes grandes?**
+> Ela é excelente do ponto de vista didático pois obriga a entender a fundo o ciclo de vida dos processos e o mapeamento de ponteiros entre regiões da RAM. Contudo, é impraticável no mundo real. Se fôssemos multiplicar duas matrizes de $1000 \times 1000$, o código tentaria fazer o `fork()` de 1 milhão de processos paralelos. Isso esgotaria os limites do sistema, consumiria toda a memória com tabelas de controle administrativo e faria a máquina travar antes de concluir o cálculo.
+
+
+
+
+
+
+
+
+
+
+O Grande Problema: O IsolamentoQuando você está no seu Ubuntu e roda um programa, o sistema operacional coloca esse programa dentro de uma "caixa forte" invisível. Essa caixa é o espaço de endereçamento de memória dele.Se você cria dois processos (Processo A e Processo B), eles vivem em caixas separadas. É como se fossem dois contêineres Docker isolados: o Processo A não faz a menor ideia do que o Processo B está fazendo, e não consegue ler as variáveis dele. O Linux faz isso de propósito por segurança e estabilidade. Se um processo travar ou fizer besteira, ele não corrompe a memória do resto do computador.A grande questão do seu laboratório é: E se o Processo A e o Processo B precisarem trabalhar juntos para resolver um problema maior (como calcular partes diferentes de uma mesma matriz)?Eles não podem simplesmente ler as variáveis um do outro. Precisamos de um túnel de comunicação. É isso que chamamos de IPC (Inter-Process Communication, ou Comunicação Entre Processos). O roteiro do Professor Eraldo explora exatamente as duas ferramentas mais famosas de IPC: as Filas de Mensagens e a Memória Compartilhada.1. Filas de Mensagens (O "Correio" do Sistema)Usado nos Exercícios 1, 2, 3, 4 e 6.Imagine que o sistema operacional (o Kernel) abriu uma agência dos Correios.O Processo A escreve uma carta (a mensagem, como "Temperatura 29.5"), empacota e entrega para o Kernel (mq_send()). O Kernel guarda essa carta em uma fila segura. Quando o Processo B estiver pronto, ele vai até o Kernel e pede a carta (mq_receive()).O que você precisa saber para explicar ao professor:É seguro: O próprio sistema operacional organiza quem enviou primeiro e quem recebe primeiro.Pode causar bloqueios: Se o Processo B for buscar uma carta e a caixa estiver vazia, ele fica "congelado" (bloqueante) esperando na porta do Correio até a carta chegar.É mais "lento": Exige que a mensagem seja copiada da memória do Processo A, passada para o Kernel, e depois copiada de novo para a memória do Processo B.2. Memória Compartilhada (O "Quadro Branco" Público)Usado no Exercício 7.Aqui, em vez de enviar cartas, você pede ao sistema operacional para colocar um quadro branco no meio de uma sala pública. O Processo A e o Processo B recebem a chave dessa sala. O Processo A escreve o resultado do cálculo da matriz direto no quadro, e o Processo B lê de lá instantaneamente.O que você precisa saber para explicar ao professor:É absurdamente rápido: Não tem "Correio" no meio. Os dados são lidos e escritos diretamente na memória RAM em tempo real.É perigoso (Problema de Concorrência): O que acontece se o Processo A e o Processo B tentarem escrever no exato mesmo centímetro do quadro ao mesmo tempo? Os dados se misturam e corrompem. Isso se chama Condição de Corrida (Race Condition).A solução do seu Exercício 7: Nós evitamos esse perigo dividindo o quadro em "lotes". Dissemos: "Filho 1, você só escreve na posição [0][0]. Filho 2, você só escreve na [0][1]". Como ninguém pisa no calo de ninguém, funciona perfeitamente.Resumo ComparativoFila de Mensagens (Ex. 1 ao 6)Memória Compartilhada (Ex. 7)AnalogiaEnviar um e-mail com anexo.Duas pessoas editando um Google Docs simultaneamente.VelocidadeMédia (O SO precisa copiar e validar os dados).Altíssima (Acesso direto à RAM).Segurança nativaAlta (O SO cuida da ordem e bloqueia se faltar espaço).Baixa (Exige que o programador crie regras para os processos não atropelarem uns aos outros).Uso idealEnviar eventos, notificações ou tarefas isoladas (ex: "Calcule esta linha").Transitar volumes massivos de dados estruturados (ex: Matrizes gigantes).O objetivo desse laboratório é te fazer sentir na pele a diferença entre mandar o SO resolver a organização (Fila) versus você mesma ter que orquestrar a memória de baixo nível sem causar acidentes (Memória Compartilhada).
